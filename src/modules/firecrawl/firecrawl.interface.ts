@@ -14,4 +14,3 @@ export interface FirecrawlSearchOptions {
       description?: string;
     }>;
   }
-  

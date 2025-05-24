@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import {
-  TextSplitterParams,
-  RecursiveCharacterTextSplitterParams,
+import { 
+  TextSplitterParams, 
+  RecursiveCharacterTextSplitterParams 
 } from './text-splitter.interface';
 
 @Injectable()
@@ -9,8 +9,8 @@ export class TextSplitterService {
   private readonly defaultSeparators = ['\n\n', '\n', '.', ',', '>', '<', ' ', ''];
 
   splitText(
-    text: string,
-    params: Partial<RecursiveCharacterTextSplitterParams> = {},
+    text: string, 
+    params: Partial<RecursiveCharacterTextSplitterParams> = {}
   ): string[] {
     const {
       chunkSize = 1000,
@@ -34,13 +34,19 @@ export class TextSplitterService {
     const finalChunks: string[] = [];
     let separator = separators[separators.length - 1];
 
+    // Find the appropriate separator
     for (const s of separators) {
-      if (s === '' || text.includes(s)) {
+      if (s === '') {
+        separator = s;
+        break;
+      }
+      if (text.includes(s)) {
         separator = s;
         break;
       }
     }
 
+    // Split the text
     const splits = separator ? text.split(separator) : text.split('');
     const goodSplits: string[] = [];
 
@@ -49,15 +55,18 @@ export class TextSplitterService {
         goodSplits.push(split);
       } else {
         if (goodSplits.length) {
-          finalChunks.push(...this.mergeSplits(goodSplits, separator, chunkSize, chunkOverlap));
+          const mergedText = this.mergeSplits(goodSplits, separator, chunkSize, chunkOverlap);
+          finalChunks.push(...mergedText);
           goodSplits.length = 0;
         }
-        finalChunks.push(...this.recursiveSplit(split, separators, chunkSize, chunkOverlap));
+        const otherInfo = this.recursiveSplit(split, separators, chunkSize, chunkOverlap);
+        finalChunks.push(...otherInfo);
       }
     }
 
     if (goodSplits.length) {
-      finalChunks.push(...this.mergeSplits(goodSplits, separator, chunkSize, chunkOverlap));
+      const mergedText = this.mergeSplits(goodSplits, separator, chunkSize, chunkOverlap);
+      finalChunks.push(...mergedText);
     }
 
     return finalChunks;
@@ -75,10 +84,20 @@ export class TextSplitterService {
 
     for (const d of splits) {
       const len = d.length;
-
+      
       if (total + len >= chunkSize) {
+        if (total > chunkSize) {
+          console.warn(
+            `Created a chunk of size ${total}, which is longer than the specified ${chunkSize}`,
+          );
+        }
+        
         if (currentDoc.length > 0) {
-          docs.push(this.joinDocs(currentDoc, separator));
+          const doc = this.joinDocs(currentDoc, separator);
+          if (doc !== null) {
+            docs.push(doc);
+          }
+          
           while (
             total > chunkOverlap ||
             (total + len > chunkSize && total > 0)
@@ -88,19 +107,21 @@ export class TextSplitterService {
           }
         }
       }
-
+      
       currentDoc.push(d);
       total += len;
     }
-
-    if (currentDoc.length) {
-      docs.push(this.joinDocs(currentDoc, separator));
+    
+    const doc = this.joinDocs(currentDoc, separator);
+    if (doc !== null) {
+      docs.push(doc);
     }
-
+    
     return docs;
   }
 
-  private joinDocs(docs: string[], separator: string): string {
-    return docs.join(separator).trim();
+  private joinDocs(docs: string[], separator: string): string | null {
+    const text = docs.join(separator).trim();
+    return text === '' ? null : text;
   }
 }

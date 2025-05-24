@@ -30,4 +30,3 @@ export interface ResearchProgress {
     questions: string[];
     formatted: string;
   }
-  

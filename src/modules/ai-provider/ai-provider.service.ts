@@ -1,72 +1,115 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createGroq } from '@ai-sdk/groq';
+import { createFireworks } from '@ai-sdk/fireworks';
 import { createOpenAI } from '@ai-sdk/openai';
+import {
+  extractReasoningMiddleware,
+  LanguageModelV1,
+  wrapLanguageModel,
+} from 'ai';
 import { getEncoding } from 'js-tiktoken';
-import { LanguageModelV1 } from 'ai';
-import { AIProvider } from './enums/ai-provider.enum';
 import { IAIProviderService } from './ai-provider.interface';
+import { AIProvider } from './enums/ai-provider.enum';
+import { TextSplitterService } from '../text-processing/text-splitter.service';
 
 @Injectable()
 export class AIProviderService implements IAIProviderService {
+  private readonly models: Partial<Record<AIProvider, LanguageModelV1>>;
   private readonly encoder = getEncoding('o200k_base');
   private readonly MinChunkSize = 140;
-  private readonly models: Partial<Record<AIProvider, LanguageModelV1>>;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly textSplitter: TextSplitterService,
+  ) {
     this.models = this.initializeModels();
   }
 
   private initializeModels(): Partial<Record<AIProvider, LanguageModelV1>> {
     const models: Partial<Record<AIProvider, LanguageModelV1>> = {};
 
-    const openaiKey = this.configService.get<string>('ai.openai.apiKey');
-    const openaiEndpoint = this.configService.get<string>('ai.openai.endpoint');
-    if (openaiKey) {
-      const openai = createOpenAI({ apiKey: openaiKey, baseURL: openaiEndpoint });
-      models[AIProvider.OPENAI] = openai('gpt-4o');
+    // OpenAI
+    const openaiConfig = this.configService.get('ai.openai');
+    if (openaiConfig?.apiKey) {
+      const openai = createOpenAI({
+        apiKey: openaiConfig.apiKey,
+        baseURL: openaiConfig.endpoint,
+      });
+      models[AIProvider.OPENAI] = openai('o3-mini', {
+        reasoningEffort: 'medium',
+        structuredOutputs: true,
+      });
     }
 
-    const anthropicKey = this.configService.get<string>('ai.anthropic.apiKey');
-    if (anthropicKey) {
-      const anthropic = createAnthropic({ apiKey: anthropicKey });
-      models[AIProvider.ANTHROPIC] = anthropic('claude-3-haiku-20240307');
+    // Anthropic
+    const anthropicConfig = this.configService.get('ai.anthropic');
+    if (anthropicConfig?.apiKey) {
+      const anthropic = createAnthropic({ apiKey: anthropicConfig.apiKey });
+      models[AIProvider.ANTHROPIC] = anthropic('claude-3-haiku-20240307') as LanguageModelV1;
     }
 
-    const googleKey = this.configService.get<string>('ai.google.apiKey');
-    if (googleKey) {
-      const google = createGoogleGenerativeAI({ apiKey: googleKey });
-      models[AIProvider.GOOGLE] = google('models/gemini-pro');
-    }
-
-    const groqKey = this.configService.get<string>('ai.groq.apiKey');
-    if (groqKey) {
-      const groq = createGroq({ apiKey: groqKey });
-      models[AIProvider.GROQ] = groq('mixtral-8x7b-32768');
-    }
+    // Fireworks
+    // const fireworksConfig = this.configService.get('ai.fireworks');
+    // if (fireworksConfig?.apiKey) {
+    //   const fireworks = createFireworks({ apiKey: fireworksConfig.apiKey });
+    //   models[AIProvider.FIREWORKS] = wrapLanguageModel({
+    //     model: fireworks('accounts/fireworks/models/deepseek-r1') as LanguageModelV1,
+    //     middleware: extractReasoningMiddleware({ tagName: 'think' }),
+    //   });
+    // }
 
     return models;
   }
 
   getModel(): LanguageModelV1 {
-    const provider = this.configService.get<AIProvider>('ai.provider') ?? AIProvider.OPENAI;
-    const model = this.models[provider];
+    const customModelId = this.configService.get<string>('ai.customModel');
+    const preferredProvider = this.configService.get<AIProvider>('ai.provider');
 
-    if (!model) throw new Error(`❌ No LLM model configured for provider "${provider}"`);
-    return model;
+    if (customModelId && this.models[AIProvider.OPENAI]) {
+      const openai = createOpenAI({
+        apiKey: this.configService.get('ai.openai.apiKey'),
+        baseURL: this.configService.get('ai.openai.endpoint'),
+      });
+      return openai(customModelId, { structuredOutputs: true });
+    }
+
+    const selected = this.models[preferredProvider];
+    if (selected) return selected;
+
+    const fallback = Object.values(this.models).find(Boolean);
+    if (!fallback) {
+      throw new Error('❌ No available LLM provider configured');
+    }
+    return fallback;
   }
 
   trimPrompt(prompt: string, contextSize?: number): string {
-    const maxContextSize = contextSize ?? this.configService.get<number>('ai.contextSize') ?? 128000;
+    if (!prompt) return '';
+    
+    const maxContextSize = contextSize || this.configService.get<number>('ai.contextSize');
     const length = this.encoder.encode(prompt).length;
-
+    
     if (length <= maxContextSize) return prompt;
 
-    const overflow = length - maxContextSize;
-    const safeLength = prompt.length - overflow * 3;
+    const overflowTokens = length - maxContextSize;
+    const chunkSize = prompt.length - overflowTokens * 3;
+    
+    if (chunkSize < this.MinChunkSize) {
+      return prompt.slice(0, this.MinChunkSize);
+    }
 
-    return prompt.slice(0, Math.max(safeLength, this.MinChunkSize));
+    const chunks = this.textSplitter.splitText(prompt, {
+      chunkSize,
+      chunkOverlap: 0,
+    });
+    
+    const trimmedPrompt = chunks[0] ?? '';
+
+    if (trimmedPrompt.length === prompt.length) {
+      return this.trimPrompt(prompt.slice(0, chunkSize), maxContextSize);
+    }
+
+    return this.trimPrompt(trimmedPrompt, maxContextSize);
   }
 }

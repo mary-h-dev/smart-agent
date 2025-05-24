@@ -19,5 +19,7 @@ export default () => ({
   },
   firecrawl: {
     apiKey: process.env.FIRECRAWL_KEY || '',
+    baseUrl: process.env.FIRECRAWL_BASE_URL,
+    concurrency: parseInt(process.env.FIRECRAWL_CONCURRENCY ?? '2', 10),
   },
 });

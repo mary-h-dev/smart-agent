@@ -70,7 +70,13 @@ ${combinedContext}
     });
 
     this.logger.log('🎯 تخمین پارامترها:', estimation.object);
-    return estimation.object;
+    return {
+      depth: estimation.object.depth,
+      breadth: estimation.object.breadth,
+      reasoning: estimation.object.reasoning,
+      complexity: estimation.object.complexity,
+      researchScope: estimation.object.researchScope,
+    };
   }
 
   async processResearch(

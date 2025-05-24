@@ -6,4 +6,3 @@ export interface TextSplitterParams {
   export interface RecursiveCharacterTextSplitterParams extends TextSplitterParams {
     separators: string[];
   }
-  

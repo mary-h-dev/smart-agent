@@ -4,6 +4,8 @@ import { AIProviderModule } from './modules/ai-provider/ai-provider.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
+import { TextProcessingModule } from './modules/text-processing/text-processing.module';
+import { ResearchModule } from './modules/research/research.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { Module } from '@nestjs/common';
       limit: 10,
     }]),    
     AIProviderModule,
+    TextProcessingModule,
+    ResearchModule,
     FirecrawlModule,
   ],
 })

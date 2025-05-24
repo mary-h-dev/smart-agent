@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { compact } from 'lodash';
-import * as pLimit from 'p-limit';
+import pLimit from 'p-limit';
 import { ConfigService } from '@nestjs/config';
 import { AIProviderService } from '../ai-provider/ai-provider.service';
 import { FirecrawlService } from '../firecrawl/firecrawl.service';
@@ -235,9 +235,11 @@ The reader should **learn** from the report and **enjoy reading it**.
           .max(numQueries),
       }),
     });
-    return res.object.queries;
+    return res.object.queries.map(q => ({
+      query: q.query ?? '',
+      researchGoal: q.researchGoal ?? ''
+    }));
   }
-
   private async processSerpResultWithSources({
     query,
     result,
